@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require("bcrypt");
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -57,6 +58,112 @@ async function run() {
         const collegeCollection = client.db('collegeBookingDB').collection('colleges');
         const submissionsCollection = client.db('collegeBookingDB').collection('submissions');
         const reviewsCollection = client.db('collegeBookingDB').collection('reviews');
+        // user collection related
+        const userCollection = client.db("collegeBookingDB").collection("users");
+
+
+
+        // auth related
+        app.get("/user-by-email", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send({ message: "Email required" });
+
+            try {
+                const user = await userCollection.findOne({ email });
+                if (!user) return res.status(404).send({ message: "User not found" });
+
+                res.send(user); // Include password so it can be compared in authorize
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: "Internal server error" });
+            }
+        });
+
+        // auth related
+        app.post("/users", async (req, res) => {
+            try {
+                const { name, email, password } = req.body;
+
+                // Check if user already exists
+                const existingUser = await userCollection.findOne({ email });
+                if (existingUser) {
+                    return res.status(400).json({ message: "User already exists" });
+                }
+
+                // Hash the password
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                // Store the new user
+                const result = await userCollection.insertOne({
+                    name,
+                    email,
+                    password: hashedPassword,
+                });
+
+                res.status(201).json({
+                    message: "User registered successfully",
+                    userId: result.insertedId,
+                });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
+        // auth related
+        app.post("/users/social", async (req, res) => {
+            try {
+                const { name, email } = req.body;
+
+                // Check if user already exists
+                const existingUser = await userCollection.findOne({ email });
+                if (existingUser) {
+                    return res.status(200).json({ message: "User already exists" }); // No error
+                }
+
+                // Store the new social user (no password)
+                const result = await userCollection.insertOne({
+                    name,
+                    email,
+                    provider: "social", // Optional: to differentiate
+                });
+
+                res.status(201).json({
+                    message: "Social user registered successfully",
+                    userId: result.insertedId,
+                });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
+        // auth related
+        app.patch("/users/update", async (req, res) => {
+            try {
+                const { email, updatedData } = req.body;
+
+                if (!email || !updatedData) {
+                    return res.status(400).json({ message: "Invalid update request" });
+                }
+
+                const result = await userCollection.updateOne(
+                    { email },
+                    { $set: updatedData }
+                );
+
+                if (result.modifiedCount > 0) {
+                    return res
+                        .status(200)
+                        .json({ message: "Profile updated successfully" });
+                } else {
+                    return res.status(200).json({ message: "No changes made" });
+                }
+            } catch (err) {
+                console.error("Profile update error:", err);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
 
 
 
@@ -78,6 +185,38 @@ async function run() {
         });
 
 
+
+        // testing area
+        // Search colleges by name (similar to MealsDB search)
+        // app.get('/colleges/search', async (req, res) => {
+        //     try {
+        //         const searchTerm = req.query.s; // Using 's' parameter like MealsDB
+
+        //         if (!searchTerm) {
+        //             return res.json({ colleges: [] });
+        //         }
+
+        //         // Create case-insensitive search query
+        //         const query = {
+        //             name: { $regex: searchTerm, $options: 'i' }
+        //         };
+
+        //         const cursor = collegeCollection.find(query);
+        //         const result = await cursor.toArray();
+
+        //         // Return in similar format to MealsDB (colleges instead of meals)
+        //         res.json({ colleges: result });
+        //     } catch (err) {
+        //         console.error("Error searching colleges:", err);
+        //         res.status(500).json({ colleges: [] });
+        //     }
+        // });
+
+        // testing area
+
+
+
+
         // get all submissions api -- for testing only
         app.get('/submissions', async (req, res) => {
             const cursor = submissionsCollection.find();
@@ -92,6 +231,18 @@ async function run() {
             const result = await submissionsCollection.findOne(query);
             res.send(result);
         });
+
+
+        // get all submissions by email query for a specific user
+        app.get('/submissions/by-email/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email }
+            const result = await submissionsCollection.find(query).toArray();
+            res.send(result);
+        })
+
+
+
 
 
 
